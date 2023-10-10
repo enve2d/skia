@@ -1,0 +1,3 @@
+[submodule "third_party/externals/sfntly"]
+	path = third_party/externals/sfntly
+	url = https://github.com/friction2d/sfntly
