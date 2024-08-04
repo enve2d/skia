@@ -26,7 +26,7 @@ extern int gMaxRecursion[];
     invoked when a geometry or text is drawn in a canvas with the
     kStroke_Mask bit set in the paint.
 */
-class SkStroke {
+class SK_API SkStroke {
 public:
     SkStroke();
     SkStroke(const SkPaint&);

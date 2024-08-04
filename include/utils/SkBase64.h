@@ -10,7 +10,7 @@
 
 #include "include/core/SkTypes.h"
 
-struct SkBase64 {
+struct SK_API SkBase64 {
 public:
     enum Error {
         kNoError,
