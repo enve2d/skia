@@ -1,4 +1,8 @@
 #!/bin/sh
+set -e -x
+
+rm -rf out/build-bundle || true
+rm -rf out/build-system || true
 
 git submodule update -i
 python3 tools/git-sync-deps
