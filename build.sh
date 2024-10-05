@@ -1,6 +1,12 @@
 #!/bin/sh
 set -e -x
 
+APT=${APT:-0}
+if [ "${APT}" = 1 ]; then
+    sudo apt update -y
+    sudo apt install -y curl git clang build-essential python3 ninja-build libfontconfig1-dev libfreetype-dev libexpat1-dev libjpeg-turbo8-dev libpng-dev libwebp-dev zlib1g-dev libicu-dev libharfbuzz-dev
+fi
+
 rm -rf out/build-bundle || true
 rm -rf out/build-system || true
 
