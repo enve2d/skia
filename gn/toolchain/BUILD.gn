@@ -277,7 +277,7 @@ template("gcc_like_toolchain") {
     }
 
     tool("solink") {
-      soname = "{{target_output_name}}{{output_extension}}"
+      soname = "{{target_output_name}}.friction{{output_extension}}"
 
       rpath = "-Wl,-soname,$soname"
       if (is_mac || is_ios) {
