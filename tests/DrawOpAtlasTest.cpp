@@ -74,7 +74,7 @@ void GrDrawOpAtlas::setMaxPages_TestingOnly(uint32_t maxPages) {
 
 class DummyEvict : public GrDrawOpAtlas::EvictionCallback {
 public:
-    void evict(GrDrawOpAtlas::PlotLocator plotLocator) override {
+    void evict(GrDrawOpAtlas::PlotLocator) override {
         SkASSERT(0); // The unit test shouldn't exercise this code path
     }
 };
@@ -209,9 +209,11 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrAtlasTextOpPreparation, reporter, ctxInfo) 
     font.setEdging(SkFont::Edging::kAlias);
 
     const char* text = "a";
+    SkSimpleMatrixProvider matrixProvider(SkMatrix::I());
 
-    std::unique_ptr<GrDrawOp> op = textContext->createOp_TestingOnly(
-            context, textContext, rtc.get(), paint, font, SkMatrix::I(), text, 16, 16);
+    std::unique_ptr<GrDrawOp> op =
+            textContext->createOp_TestingOnly(context, textContext, rtc.get(), paint, font,
+                                              matrixProvider, text, 16, 16);
     bool hasMixedSampledCoverage = false;
     op->finalize(*context->priv().caps(), nullptr, hasMixedSampledCoverage, GrClampType::kAuto);
 

@@ -9,6 +9,7 @@ _include = get_path_info("include", "abspath")
 
 skia_skottie_public = [
   "$_include/Skottie.h",
+  "$_include/ExternalLayer.h",
   "$_include/SkottieProperty.h",
 ]
 
@@ -39,12 +40,14 @@ skia_skottie_sources = [
   "$_src/animator/Vec2KeyframeAnimator.cpp",
   "$_src/animator/VectorKeyframeAnimator.cpp",
   "$_src/animator/VectorKeyframeAnimator.h",
+  "$_src/effects/BrightnessContrastEffect.cpp",
   "$_src/effects/CornerPinEffect.cpp",
   "$_src/effects/DropShadowEffect.cpp",
   "$_src/effects/Effects.cpp",
   "$_src/effects/Effects.h",
   "$_src/effects/FillEffect.cpp",
   "$_src/effects/GaussianBlurEffect.cpp",
+  "$_src/effects/GlowStyles.cpp",
   "$_src/effects/GradientEffect.cpp",
   "$_src/effects/HueSaturationEffect.cpp",
   "$_src/effects/InvertEffect.cpp",
@@ -54,12 +57,13 @@ skia_skottie_sources = [
   "$_src/effects/MotionBlurEffect.h",
   "$_src/effects/MotionTileEffect.cpp",
   "$_src/effects/RadialWipeEffect.cpp",
+  "$_src/effects/ShadowStyles.cpp",
   "$_src/effects/ShiftChannelsEffect.cpp",
   "$_src/effects/TintEffect.cpp",
   "$_src/effects/TransformEffect.cpp",
   "$_src/effects/TritoneEffect.cpp",
   "$_src/effects/VenetianBlindsEffect.cpp",
-  "$_src/layers/ImageLayer.cpp",
+  "$_src/layers/FootageLayer.cpp",
   "$_src/layers/NullLayer.cpp",
   "$_src/layers/PrecompLayer.cpp",
   "$_src/layers/SolidLayer.cpp",

@@ -25,7 +25,7 @@
 #include "src/gpu/GrStyle.h"
 #include "src/gpu/effects/GrBezierEffect.h"
 #include "src/gpu/geometry/GrPathUtils.h"
-#include "src/gpu/geometry/GrShape.h"
+#include "src/gpu/geometry/GrStyledShape.h"
 #include "src/gpu/ops/GrAAHairLinePathRenderer.h"
 #include "src/gpu/ops/GrMeshDrawOp.h"
 #include "src/gpu/ops/GrSimpleMeshDrawOpHelperWithStencil.h"
@@ -1272,10 +1272,8 @@ bool GrAAHairLinePathRenderer::onDrawPath(const DrawPathArgs& args) {
                               "GrAAHairlinePathRenderer::onDrawPath");
     SkASSERT(args.fRenderTargetContext->numSamples() <= 1);
 
-    SkIRect devClipBounds;
-    args.fClip->getConservativeBounds(args.fRenderTargetContext->width(),
-                                      args.fRenderTargetContext->height(),
-                                      &devClipBounds);
+    SkIRect devClipBounds = args.fClip->getConservativeBounds(args.fRenderTargetContext->width(),
+                                                              args.fRenderTargetContext->height());
     SkPath path;
     args.fShape->asPath(&path);
     std::unique_ptr<GrDrawOp> op =

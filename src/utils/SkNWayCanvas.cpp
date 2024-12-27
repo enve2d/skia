@@ -65,14 +65,6 @@ void SkNWayCanvas::willSave() {
     this->INHERITED::willSave();
 }
 
-void SkNWayCanvas::onSaveCamera(const SkM44& projection, const SkM44& camera) {
-    Iter iter(fList);
-    while (iter.next()) {
-        iter->saveCamera(projection, camera);
-    }
-    this->INHERITED::onSaveCamera(projection, camera);
-}
-
 SkCanvas::SaveLayerStrategy SkNWayCanvas::getSaveLayerStrategy(const SaveLayerRec& rec) {
     Iter iter(fList);
     while (iter.next()) {
@@ -101,10 +93,18 @@ void SkNWayCanvas::willRestore() {
     this->INHERITED::willRestore();
 }
 
-void SkNWayCanvas::didConcat44(const SkScalar m[16]) {
+void SkNWayCanvas::onMarkCTM(const char* name) {
     Iter iter(fList);
     while (iter.next()) {
-        iter->concat(SkM44::ColMajor(m));
+        iter->markCTM(name);
+    }
+    this->INHERITED::onMarkCTM(name);
+}
+
+void SkNWayCanvas::didConcat44(const SkM44& m) {
+    Iter iter(fList);
+    while (iter.next()) {
+        iter->concat(m);
     }
 }
 

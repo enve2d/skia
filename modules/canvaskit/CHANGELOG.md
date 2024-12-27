@@ -8,14 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
  - Support for DOMMatrix on all APIs that take SkMatrix (i.e. arrays or Float32Arrays of length 6/9/16).
+ - `CanvasKit.MakeWebGLCanvasSurface` takes an option for WebGL version to make it easier to specify
+   v1 or v2.
+ - setEdging and setEmbeddedBitmaps to SkFont. You can disable the ability to draw aliased fonts (and save some code
+   size) with the compile.sh argument `no_alias_font`.
 
 ### Removed
- - Previously deprecated functions MakeSkDashPathEffect, MakeLinearGradientShader,
-   MakeRadialGradientShader, MakeTwoPointConicalGradientShader, MakeSkCornerPathEffect,
-   MakeSkDiscretePathEffect
+ - Previously deprecated functions `MakeSkDashPathEffect`, `MakeLinearGradientShader`,
+   `MakeRadialGradientShader`, `MakeTwoPointConicalGradientShader`, `MakeSkCornerPathEffect`,
+   `MakeSkDiscretePathEffect`
 
 ### Changed
  - CanvasKit colors are now represented with a TypedArray of four floats.
+ - Safari now defaults to using WebGL1 instead of WebGL2 (skbug.com/10171)
 
 ### Removed
  - SkPaint.setColorf is obsolete and removed. setColor accepts a CanvasKit color which is

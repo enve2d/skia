@@ -18,10 +18,18 @@ if (skia_use_system_expat) {
     _src = "../externals/expat"
 
     public_defines = [ "XML_STATIC" ]
+    public_include_dirs = [ "../externals/expat/expat/lib" ]
 
-    public_include_dirs = [
-      "../externals/expat/expat/lib",
-      "include/expat_config",
+    defines = [
+      "HAVE_MEMMOVE",
+      "XML_DEV_URANDOM",
+    ]
+
+    sources = [
+      "../externals/expat/expat/lib/expat.h",
+      "../externals/expat/expat/lib/xmlparse.c",
+      "../externals/expat/expat/lib/xmlrole.c",
+      "../externals/expat/expat/lib/xmltok.c",
     ]
 
     public = [ "$_src/expat/lib/expat.h" ]

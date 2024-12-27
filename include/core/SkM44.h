@@ -119,7 +119,7 @@ struct SkV4 {
  *      +Y goes down
  *      +Z goes into the screen (away from the viewer)
  */
-class SkM44 {
+class SK_API SkM44 {
 public:
     SkM44(const SkM44& src) = default;
     SkM44& operator=(const SkM44& src) = default;
@@ -318,12 +318,37 @@ public:
         return this->setConcat(*this, m);
     }
 
+    SkM44& postConcat(const SkM44& m) {
+        return this->setConcat(m, *this);
+    }
+
+    /**
+     *  A matrix is categorized as 'perspective' if the bottom row is not [0, 0, 0, 1].
+     *  For most uses, a bottom row of [0, 0, 0, X] behaves like a non-perspective matrix, though
+     *  it will be categorized as perspective. Calling normalizePerspective() will change the
+     *  matrix such that, if its bottom row was [0, 0, 0, X], it will be changed to [0, 0, 0, 1]
+     *  by scaling the rest of the matrix by 1/X.
+     *
+     *  | A B C D |    | A/X B/X C/X D/X |
+     *  | E F G H | -> | E/X F/X G/X H/X |   for X != 0
+     *  | I J K L |    | I/X J/X K/X L/X |
+     *  | 0 0 0 X |    |  0   0   0   1  |
+     */
+    void normalizePerspective();
+
+    /** Returns true if all elements of the matrix are finite. Returns false if any
+        element is infinity, or NaN.
+
+        @return  true if matrix has only finite elements
+    */
+    bool isFinite() const { return SkScalarsAreFinite(fMat, 16); }
+
     /** If this is invertible, return that in inverse and return true. If it is
      *  not invertible, return false and leave the inverse parameter unchanged.
      */
     bool SK_WARN_UNUSED_RESULT invert(SkM44* inverse) const;
 
-    SkM44 transpose() const;
+    SkM44 SK_WARN_UNUSED_RESULT transpose() const;
 
     void dump() const;
 
@@ -354,19 +379,16 @@ public:
                                  fMat[3], fMat[7], fMat[15]);
     }
 
-    SkM44(const SkMatrix& src)
+    explicit SkM44(const SkMatrix& src)
     : SkM44(src[SkMatrix::kMScaleX], src[SkMatrix::kMSkewX],  0, src[SkMatrix::kMTransX],
             src[SkMatrix::kMSkewY],  src[SkMatrix::kMScaleY], 0, src[SkMatrix::kMTransY],
             0,                       0,                       1, 0,
             src[SkMatrix::kMPersp0], src[SkMatrix::kMPersp1], 0, src[SkMatrix::kMPersp2])
     {}
 
-    SkM44& operator=(const SkMatrix& src) {
-        *this = SkM44(src);
-        return *this;
-    }
+    SkM44& preTranslate(SkScalar x, SkScalar y, SkScalar z = 0);
+    SkM44& postTranslate(SkScalar x, SkScalar y, SkScalar z = 0);
 
-    SkM44& preTranslate(SkScalar x, SkScalar y);
     SkM44& preScale(SkScalar x, SkScalar y);
     SkM44& preConcat(const SkMatrix&);
 
@@ -379,8 +401,6 @@ private:
      *  3  7 11  15        0 0 0 1
      */
     SkScalar fMat[16];
-
-    double determinant() const;
 
     friend class SkMatrixPriv;
 };

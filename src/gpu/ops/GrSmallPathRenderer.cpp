@@ -13,6 +13,7 @@
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkDistanceFieldGen.h"
 #include "src/core/SkDraw.h"
+#include "src/core/SkMatrixProvider.h"
 #include "src/core/SkPointPriv.h"
 #include "src/core/SkRasterClip.h"
 #include "src/gpu/GrAuditTrail.h"
@@ -50,8 +51,8 @@ class ShapeDataKey {
 public:
     ShapeDataKey() {}
     ShapeDataKey(const ShapeDataKey& that) { *this = that; }
-    ShapeDataKey(const GrShape& shape, uint32_t dim) { this->set(shape, dim); }
-    ShapeDataKey(const GrShape& shape, const SkMatrix& ctm) { this->set(shape, ctm); }
+    ShapeDataKey(const GrStyledShape& shape, uint32_t dim) { this->set(shape, dim); }
+    ShapeDataKey(const GrStyledShape& shape, const SkMatrix& ctm) { this->set(shape, ctm); }
 
     ShapeDataKey& operator=(const ShapeDataKey& that) {
         fKey.reset(that.fKey.count());
@@ -60,7 +61,7 @@ public:
     }
 
     // for SDF paths
-    void set(const GrShape& shape, uint32_t dim) {
+    void set(const GrStyledShape& shape, uint32_t dim) {
         // Shapes' keys are for their pre-style geometry, but by now we shouldn't have any
         // relevant styling information.
         SkASSERT(shape.style().isSimpleFill());
@@ -72,7 +73,7 @@ public:
     }
 
     // for bitmap paths
-    void set(const GrShape& shape, const SkMatrix& ctm) {
+    void set(const GrStyledShape& shape, const SkMatrix& ctm) {
         // Shapes' keys are for their pre-style geometry, but by now we shouldn't have any
         // relevant styling information.
         SkASSERT(shape.style().isSimpleFill());
@@ -108,7 +109,7 @@ public:
     const uint32_t* data() const { return fKey.get(); }
 
 private:
-    // The key is composed of the GrShape's key, and either the dimensions of the DF
+    // The key is composed of the GrStyledShape's key, and either the dimensions of the DF
     // generated for the path (32x32 max, 64x64 max, 128x128 max) if an SDF image or
     // the matrix for the path with only fractional translation.
     SkAutoSTArray<24, uint32_t> fKey;
@@ -228,7 +229,7 @@ public:
 
     static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                           GrPaint&& paint,
-                                          const GrShape& shape,
+                                          const GrStyledShape& shape,
                                           const SkMatrix& viewMatrix,
                                           GrDrawOpAtlas* atlas,
                                           ShapeCache* shapeCache,
@@ -240,7 +241,7 @@ public:
                                                   stencilSettings);
     }
 
-    SmallPathOp(Helper::MakeArgs helperArgs, const SkPMColor4f& color, const GrShape& shape,
+    SmallPathOp(Helper::MakeArgs helperArgs, const SkPMColor4f& color, const GrStyledShape& shape,
                 const SkMatrix& viewMatrix, GrDrawOpAtlas* atlas, ShapeCache* shapeCache,
                 ShapeDataList* shapeList, bool gammaCorrect,
                 const GrUserStencilSettings* stencilSettings)
@@ -458,7 +459,7 @@ private:
                 // check to see if df path is cached
                 ShapeDataKey key(args.fShape, SkScalarCeilToInt(desiredDimension));
                 shapeData = fShapeCache->find(key);
-                if (nullptr == shapeData || !fAtlas->hasID(shapeData->fAtlasLocator)) {
+                if (!shapeData || !fAtlas->hasID(shapeData->fAtlasLocator.plotLocator())) {
                     // Remove the stale cache entry
                     if (shapeData) {
                         fShapeCache->remove(shapeData->fKey);
@@ -483,7 +484,7 @@ private:
                 // check to see if bitmap path is cached
                 ShapeDataKey key(args.fShape, args.fViewMatrix);
                 shapeData = fShapeCache->find(key);
-                if (nullptr == shapeData || !fAtlas->hasID(shapeData->fAtlasLocator)) {
+                if (!shapeData || !fAtlas->hasID(shapeData->fAtlasLocator.plotLocator())) {
                     // Remove the stale cache entry
                     if (shapeData) {
                         fShapeCache->remove(shapeData->fKey);
@@ -539,7 +540,7 @@ private:
     }
 
     bool addDFPathToAtlas(GrMeshDrawOp::Target* target, FlushInfo* flushInfo,
-                          GrDrawOpAtlas* atlas, ShapeData* shapeData, const GrShape& shape,
+                          GrDrawOpAtlas* atlas, ShapeData* shapeData, const GrStyledShape& shape,
                           uint32_t dimension, SkScalar scale) const {
 
         const SkRect& bounds = shape.bounds();
@@ -608,7 +609,8 @@ private:
             SkRasterClip rasterClip;
             rasterClip.setRect(devPathBounds);
             draw.fRC = &rasterClip;
-            draw.fMatrix = &drawMatrix;
+            SkSimpleMatrixProvider matrixProvider(drawMatrix);
+            draw.fMatrixProvider = &matrixProvider;
             draw.fDst = dst;
 
             draw.drawPathCoverage(path, paint);
@@ -644,7 +646,7 @@ private:
     }
 
     bool addBMPathToAtlas(GrMeshDrawOp::Target* target, FlushInfo* flushInfo,
-                          GrDrawOpAtlas* atlas, ShapeData* shapeData, const GrShape& shape,
+                          GrDrawOpAtlas* atlas, ShapeData* shapeData, const GrStyledShape& shape,
                           const SkMatrix& ctm) const {
         const SkRect& bounds = shape.bounds();
         if (bounds.isEmpty()) {
@@ -698,7 +700,8 @@ private:
         rasterClip.setRect(devPathBounds);
         draw.fRC = &rasterClip;
         drawMatrix.postTranslate(translateX, translateY);
-        draw.fMatrix = &drawMatrix;
+        SkSimpleMatrixProvider matrixProvider(drawMatrix);
+        draw.fMatrixProvider = &matrixProvider;
         draw.fDst = dst;
 
         draw.drawPathCoverage(path, paint);
@@ -840,9 +843,9 @@ private:
     bool fUsesDistanceField;
 
     struct Entry {
-        SkPMColor4f fColor;
-        GrShape     fShape;
-        SkMatrix    fViewMatrix;
+        SkPMColor4f   fColor;
+        GrStyledShape fShape;
+        SkMatrix      fViewMatrix;
     };
 
     SkSTArray<1, Entry> fShapes;
@@ -933,7 +936,7 @@ struct GrSmallPathRenderer::PathTestStruct : public GrDrawOpAtlas::EvictionCallb
 std::unique_ptr<GrDrawOp> GrSmallPathRenderer::createOp_TestingOnly(
                                                         GrRecordingContext* context,
                                                         GrPaint&& paint,
-                                                        const GrShape& shape,
+                                                        const GrStyledShape& shape,
                                                         const SkMatrix& viewMatrix,
                                                         GrDrawOpAtlas* atlas,
                                                         ShapeCache* shapeCache,
@@ -970,7 +973,7 @@ GR_DRAW_OP_TEST_DEFINE(SmallPathOp) {
     bool gammaCorrect = random->nextBool();
 
     // This path renderer only allows fill styles.
-    GrShape shape(GrTest::TestPath(random), GrStyle::SimpleFill());
+    GrStyledShape shape(GrTest::TestPath(random), GrStyle::SimpleFill());
     return GrSmallPathRenderer::createOp_TestingOnly(
                                          context,
                                          std::move(paint), shape, viewMatrix,
