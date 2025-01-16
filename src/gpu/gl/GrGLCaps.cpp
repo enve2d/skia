@@ -33,11 +33,9 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fVertexArrayObjectSupport = false;
     fDebugSupport = false;
     fES2CompatibilitySupport = false;
-    fDrawInstancedSupport = false;
-    fDrawIndirectSupport = false;
     fDrawRangeElementsSupport = false;
     fMultiDrawIndirectSupport = false;
-    fBaseInstanceSupport = false;
+    fBaseVertexBaseInstanceSupport = false;
     fUseNonVBOVertexAndIndexDynamicData = false;
     fIsCoreProfile = false;
     fBindFragDataLocationSupport = false;
@@ -58,6 +56,7 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fDetachStencilFromMSAABuffersBeforeReadPixels = false;
     fDontSetBaseOrMaxLevelForExternalTextures = false;
     fNeverDisableColorWrites = false;
+    fMustSetTexParameterMinFilterToEnableMipMapping = false;
     fProgramBinarySupport = false;
     fProgramParameterSupport = false;
     fSamplerObjectSupport = false;
@@ -205,18 +204,18 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     if (GR_IS_GR_GL(standard)) {
         // 3.1 has draw_instanced but not instanced_arrays, for the time being we only care about
         // instanced arrays, but we could make this more granular if we wanted
-        fInstanceAttribSupport =
+        fDrawInstancedSupport =
                 version >= GR_GL_VER(3, 2) ||
                 (ctxInfo.hasExtension("GL_ARB_draw_instanced") &&
                  ctxInfo.hasExtension("GL_ARB_instanced_arrays"));
     } else if (GR_IS_GR_GL_ES(standard)) {
-        fInstanceAttribSupport =
+        fDrawInstancedSupport =
                 version >= GR_GL_VER(3, 0) ||
                 (ctxInfo.hasExtension("GL_EXT_draw_instanced") &&
                  ctxInfo.hasExtension("GL_EXT_instanced_arrays"));
     }  else if (GR_IS_GR_WEBGL(standard)) {
         // WebGL 2.0 has DrawArraysInstanced and drawElementsInstanced
-        fInstanceAttribSupport = version >= GR_GL_VER(2, 0);
+        fDrawInstancedSupport = version >= GR_GL_VER(2, 0);
     }
 
     if (GR_IS_GR_GL(standard)) {
@@ -237,7 +236,8 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
             fRectangleTextureSupport = true;
         }
     } else if (GR_IS_GR_GL_ES(standard)) {
-        if (kChromium_GrGLDriver == ctxInfo.driver()) {
+        if (ctxInfo.driver() == kChromium_GrGLDriver ||
+            ctxInfo.driver() == kSwiftShader_GrGLDriver) {
             fRectangleTextureSupport = ctxInfo.hasExtension("GL_ARB_texture_rectangle");
         } else {
             // ANGLE will advertise the extension in ES2 contexts but actually using the texture in
@@ -623,20 +623,22 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     }
 
     if (GR_IS_GR_GL(standard)) {
-        fDrawIndirectSupport = version >= GR_GL_VER(4,0) ||
-                               ctxInfo.hasExtension("GL_ARB_draw_indirect");
-        fBaseInstanceSupport = version >= GR_GL_VER(4,2);
-        fMultiDrawIndirectSupport = version >= GR_GL_VER(4,3) ||
-                                    (fDrawIndirectSupport &&
-                                     !fBaseInstanceSupport && // The ARB extension has no base inst.
-                                     ctxInfo.hasExtension("GL_ARB_multi_draw_indirect"));
+        fBaseVertexBaseInstanceSupport = version >= GR_GL_VER(4,2) ||
+                                         ctxInfo.hasExtension("GL_ARB_base_instance");
+        if (fBaseVertexBaseInstanceSupport) {
+            fNativeDrawIndirectSupport = version >= GR_GL_VER(4,0) ||
+                                         ctxInfo.hasExtension("GL_ARB_draw_indirect");
+            fMultiDrawIndirectSupport = version >= GR_GL_VER(4,3) ||
+                                        ctxInfo.hasExtension("GL_ARB_multi_draw_indirect");
+        }
         fDrawRangeElementsSupport = version >= GR_GL_VER(2,0);
     } else if (GR_IS_GR_GL_ES(standard)) {
-        fDrawIndirectSupport = version >= GR_GL_VER(3,1);
-        fMultiDrawIndirectSupport = fDrawIndirectSupport &&
-                                    ctxInfo.hasExtension("GL_EXT_multi_draw_indirect");
-        fBaseInstanceSupport = ctxInfo.hasExtension("GL_EXT_base_instance") ||
-                               ctxInfo.hasExtension("GL_ANGLE_base_vertex_base_instance");
+        fBaseVertexBaseInstanceSupport = ctxInfo.hasExtension("GL_EXT_base_instance") ||
+                                         ctxInfo.hasExtension("GL_ANGLE_base_vertex_base_instance");
+        if (fBaseVertexBaseInstanceSupport) {
+            fNativeDrawIndirectSupport = version >= GR_GL_VER(3,1);
+            fMultiDrawIndirectSupport = ctxInfo.hasExtension("GL_EXT_multi_draw_indirect");
+        }
         fDrawRangeElementsSupport = version >= GR_GL_VER(3,0);
     } else if (GR_IS_GR_WEBGL(standard)) {
         // WebGL lacks indirect support, but drawRange was added in WebGL 2.0
@@ -1182,9 +1184,8 @@ void GrGLCaps::onDumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("GL_ARB_imaging support", fImagingSupport);
     writer->appendBool("Vertex array object support", fVertexArrayObjectSupport);
     writer->appendBool("Debug support", fDebugSupport);
-    writer->appendBool("Draw indirect support", fDrawIndirectSupport);
     writer->appendBool("Multi draw indirect support", fMultiDrawIndirectSupport);
-    writer->appendBool("Base instance support", fBaseInstanceSupport);
+    writer->appendBool("Base (vertex base) instance support", fBaseVertexBaseInstanceSupport);
     writer->appendBool("RGBA 8888 pixel ops are slow", fRGBA8888PixelsOpsAreSlow);
     writer->appendBool("Partial FBO read is slow", fPartialFBOReadIsSlow);
     writer->appendBool("Bind uniform location support", fBindUniformLocationSupport);
@@ -1857,7 +1858,7 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
             info.fInternalFormatForTexImageOrStorage = bgraTexImageFormat;
         }
 
-        if (SkToBool(info.fFlags &FormatInfo::kTexturable_Flag)) {
+        if (SkToBool(info.fFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
             int ctIdx = 0;
@@ -2451,6 +2452,7 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
                    ctxInfo.hasExtension("GL_EXT_texture_type_2_10_10_10_REV")) {
             info.fFlags = FormatInfo::kTexturable_Flag;
         } // No WebGL support
+
         if (texStorageSupported) {
             info.fFlags |= FormatInfo::kUseTexStorage_Flag;
             info.fInternalFormatForTexImageOrStorage = GR_GL_RGB10_A2;
@@ -2459,8 +2461,11 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
                     texImageSupportsSizedInternalFormat ? GR_GL_RGB10_A2 : GR_GL_RGBA;
         }
 
-        if (SkToBool(info.fFlags &FormatInfo::kTexturable_Flag)) {
-            info.fColorTypeInfoCount = 1;
+        if (SkToBool(info.fFlags & FormatInfo::kTexturable_Flag)) {
+            bool supportsBGRAColorType = GR_IS_GR_GL(standard) &&
+                    (version >= GR_GL_VER(1, 2) || ctxInfo.hasExtension("GL_EXT_bgra"));
+
+            info.fColorTypeInfoCount = supportsBGRAColorType ? 2 : 1;
             info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
             int ctIdx = 0;
             // Format: RGB10_A2, Surface: kRGBA_1010102
@@ -2487,6 +2492,40 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
                 }
 
                 // Format: RGB10_A2, Surface: kRGBA_1010102, Data: kRGBA_8888
+                {
+                    auto& ioFormat = ctInfo.fExternalIOFormats[ioIdx++];
+                    ioFormat.fColorType = GrColorType::kRGBA_8888;
+                    ioFormat.fExternalType = GR_GL_UNSIGNED_BYTE;
+                    ioFormat.fExternalTexImageFormat = 0;
+                    ioFormat.fExternalReadFormat = GR_GL_RGBA;
+                }
+            }
+            //------------------------------------------------------------------
+            // Format: RGB10_A2, Surface: kBGRA_1010102
+            if (supportsBGRAColorType) {
+                auto& ctInfo = info.fColorTypeInfos[ctIdx++];
+                ctInfo.fColorType = GrColorType::kBGRA_1010102;
+                ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
+                this->setColorTypeFormat(GrColorType::kBGRA_1010102, GrGLFormat::kRGB10_A2);
+
+                // External IO ColorTypes:
+                ctInfo.fExternalIOFormatCount = 2;
+                ctInfo.fExternalIOFormats.reset(
+                        new ColorTypeInfo::ExternalIOFormats[ctInfo.fExternalIOFormatCount]());
+                int ioIdx = 0;
+                // Format: RGB10_A2, Surface: kBGRA_1010102, Data: kBGRA_1010102
+                {
+                    auto& ioFormat = ctInfo.fExternalIOFormats[ioIdx++];
+                    ioFormat.fColorType = GrColorType::kBGRA_1010102;
+                    ioFormat.fExternalType = GR_GL_UNSIGNED_INT_2_10_10_10_REV;
+                    ioFormat.fExternalTexImageFormat = GR_GL_BGRA;
+                    ioFormat.fExternalReadFormat =
+                            formatWorkarounds.fDisallowBGRA8ReadPixels ? 0 : GR_GL_BGRA;
+                    // Not guaranteed by ES/WebGL.
+                    ioFormat.fRequiresImplementationReadQuery = !GR_IS_GR_GL(standard);
+                }
+
+                // Format: RGB10_A2, Surface: kBGRA_1010102, Data: kRGBA_8888
                 {
                     auto& ioFormat = ctInfo.fExternalIOFormats[ioIdx++];
                     ioFormat.fColorType = GrColorType::kRGBA_8888;
@@ -3095,7 +3134,13 @@ void GrGLCaps::setupSampleCounts(const GrGLContextInfo& ctxInfo, const GrGLInter
                     // returned by GL so that the array is ascending.
                     fFormatTable[i].fColorSampleCounts[0] = 1;
                     for (int j = 0; j < count; ++j) {
+#if TARGET_OS_SIMULATOR
+                        // The iOS simulator is reporting incorrect values for sample counts,
+                        // so force them to be a power of 2.
+                        fFormatTable[i].fColorSampleCounts[j+1] = SkPrevPow2(temp[count - j - 1]);
+#else
                         fFormatTable[i].fColorSampleCounts[j+1] = temp[count - j - 1];
+#endif
                     }
                 }
             } else {
@@ -3437,8 +3482,11 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // perform full screen clears.
     // Update on 4/4/2018 - This appears to be fixed on driver 10.30.12 on a macOS 10.13.2 on a
     // Retina MBP Early 2015 with Iris 6100. It is possibly fixed on earlier drivers as well.
+    // crbug.com/1039912 - Crash rate in glClear spiked after OS update, affecting mostly
+    //   Broadwell on 10.13+
     if (kIntel_GrGLVendor == ctxInfo.vendor() &&
-        ctxInfo.driverVersion() < GR_GL_DRIVER_VER(10, 30, 12)) {
+        (ctxInfo.driverVersion() < GR_GL_DRIVER_VER(10, 30, 12) ||
+         ctxInfo.renderer() == kIntelBroadwell_GrGLRenderer)) {
         fPerformColorClearsAsDraws = true;
     }
     // crbug.com/969609 - NVIDIA on Mac sometimes segfaults during glClear in chrome. It seems
@@ -3507,6 +3555,15 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fMaxInstancesPerDrawWithoutCrashing = 0x4000000;
     }
 
+#ifndef SK_BUILD_FOR_IOS
+    if (kPowerVRRogue_GrGLRenderer == ctxInfo.renderer()) {
+        // We saw this bug on a TecnoSpark 3 Pro with a PowerVR GE8300.
+        // GL_VERSION: "OpenGL ES 3.2 build 1.10@51309121"
+        // Possibly this could be more limited by driver version or HW generation.
+        fMustSetTexParameterMinFilterToEnableMipMapping = true;
+    }
+#endif
+
     // Texture uploads sometimes seem to be ignored to textures bound to FBOS on Tegra3.
     if (kTegra_PreK1_GrGLRenderer == ctxInfo.renderer()) {
         fDisallowTexSubImageForUnormConfigTexturesEverBoundToFBO = true;
@@ -3544,12 +3601,16 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // http://anglebug.com/4536
     if (ctxInfo.driver() == kANGLE_GrGLDriver &&
         ctxInfo.angleBackend() != GrGLANGLEBackend::kOpenGL) {
-        fBaseInstanceSupport = false;
+        fBaseVertexBaseInstanceSupport = false;
+        fNativeDrawIndirectSupport = false;
+        fMultiDrawIndirectSupport = false;
     }
 
     // http://anglebug.com/4538
-    if (fBaseInstanceSupport && !fInstanceAttribSupport) {
-        fBaseInstanceSupport = false;
+    if (fBaseVertexBaseInstanceSupport && !fDrawInstancedSupport) {
+        fBaseVertexBaseInstanceSupport = false;
+        fNativeDrawIndirectSupport = false;
+        fMultiDrawIndirectSupport = false;
     }
 
     // Currently the extension is advertised but fb fetch is broken on 500 series Adrenos like the
@@ -3562,8 +3623,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // On the NexusS and GalaxyNexus, the use of 'any' causes the compilation error "Calls to any
     // function that may require a gradient calculation inside a conditional block may return
     // undefined results". This appears to be an issue with the 'any' call since even the simple
-    // "result=black; if (any()) result=white;" code fails to compile. This issue comes into play
-    // from our GrTextureDomain processor.
+    // "result=black; if (any()) result=white;" code fails to compile.
     shaderCaps->fCanUseAnyFunctionInShader = kImagination_GrGLVendor != ctxInfo.vendor();
 
     // Known issue on at least some Intel platforms:
@@ -3806,6 +3866,16 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         // http://skbug.com/9740
         shaderCaps->fTessellationSupport = false;
     }
+
+#ifdef SK_BUILD_FOR_WIN
+    // glDrawElementsIndirect fails GrMeshTest on every Win10 Intel bot.
+    if (ctxInfo.driver() == kIntel_GrGLDriver ||
+        (ctxInfo.driver() == kANGLE_GrGLDriver &&
+         ctxInfo.angleVendor() == GrGLANGLEVendor::kIntel &&
+         ctxInfo.angleBackend() == GrGLANGLEBackend::kOpenGL)) {
+        fNativeDrawIndexedIndirectIsBroken = true;
+    }
+#endif
 
 #ifdef SK_BUILD_FOR_ANDROID
     // Older versions of Android have problems with setting GL_TEXTURE_BASE_LEVEL or
@@ -4270,31 +4340,6 @@ bool GrGLCaps::onAreColorTypeAndFormatCompatible(GrColorType ct,
     return false;
 }
 
-GrColorType GrGLCaps::getYUVAColorTypeFromBackendFormat(const GrBackendFormat& format,
-                                                        bool isAlphaChannel) const {
-    switch (format.asGLFormat()) {
-        case GrGLFormat::kLUMINANCE8:
-        case GrGLFormat::kR8:
-        case GrGLFormat::kALPHA8:
-                                        return isAlphaChannel ? GrColorType::kAlpha_8
-                                                              : GrColorType::kGray_8;
-        case GrGLFormat::kRG8:          return GrColorType::kRG_88;
-        case GrGLFormat::kRGBA8:        return GrColorType::kRGBA_8888;
-        case GrGLFormat::kRGB8:         return GrColorType::kRGB_888x;
-        case GrGLFormat::kBGRA8:        return GrColorType::kBGRA_8888;
-        case GrGLFormat::kRGB10_A2:     return GrColorType::kRGBA_1010102;
-        case GrGLFormat::kLUMINANCE16F: // fall through
-        case GrGLFormat::kR16F:         return GrColorType::kAlpha_F16;
-        case GrGLFormat::kR16:          return GrColorType::kAlpha_16;
-        case GrGLFormat::kRG16:         return GrColorType::kRG_1616;
-        case GrGLFormat::kRGBA16:       return GrColorType::kRGBA_16161616;
-        case GrGLFormat::kRG16F:        return GrColorType::kRG_F16;
-        default:                        return GrColorType::kUnknown;
-    }
-
-    SkUNREACHABLE;
-}
-
 GrBackendFormat GrGLCaps::onGetDefaultBackendFormat(GrColorType ct) const {
     auto format = this->getFormatFromColorType(ct);
     if (format == GrGLFormat::kUnknown) {
@@ -4428,6 +4473,8 @@ std::vector<GrCaps::TestFormatColorTypeCombination> GrGLCaps::getTestingCombinat
     if (GR_IS_GR_GL(fStandard)) {
         combos.push_back({ GrColorType::kBGRA_8888,
                            GrBackendFormat::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_2D) });
+        combos.push_back({ GrColorType::kBGRA_1010102,
+                           GrBackendFormat::MakeGL(GR_GL_RGB10_A2, GR_GL_TEXTURE_2D) });
     } else {
         SkASSERT(GR_IS_GR_GL_ES(fStandard) || GR_IS_GR_WEBGL(fStandard));
 

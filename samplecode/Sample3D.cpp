@@ -82,16 +82,16 @@ protected:
     SkV3    fCOA { 0, 0, 0 };
     SkV3    fUp  { 0, 1, 0 };
 
+    const char* kLocalToWorld = "local_to_world";
+
 public:
-    void saveCamera(SkCanvas* canvas, const SkRect& area, SkScalar zscale) {
+    void concatCamera(SkCanvas* canvas, const SkRect& area, SkScalar zscale) {
         SkM44 camera = Sk3LookAt(fEye, fCOA, fUp),
               perspective = Sk3Perspective(fNear, fFar, fAngle),
               viewport = SkM44::Translate(area.centerX(), area.centerY(), 0) *
                          SkM44::Scale(area.width()*0.5f, area.height()*0.5f, zscale);
 
-        // want "world" to be in our big coordinates (e.g. area), so apply this inverse
-        // as part of our "camera".
-        canvas->saveCamera(viewport * perspective, camera * inv(viewport));
+        canvas->concat(viewport * perspective * camera * inv(viewport));
     }
 };
 
@@ -229,9 +229,6 @@ class SampleCubeBase : public Sample3DView {
         DY = 300
     };
 
-    SkM44 fWorldToClick,
-          fClickToWorld;
-
     SkM44 fRotation;        // part of model
 
     RotateAnimator fRotateAnimator;
@@ -263,24 +260,15 @@ public:
 
     virtual void drawContent(SkCanvas* canvas, SkColor, int index, bool drawFront) = 0;
 
-    void setClickToWorld(SkCanvas* canvas, const SkM44& clickM) {
-        auto l2d = canvas->getLocalToDevice();
-        fWorldToClick = inv(clickM) * l2d;
-        fClickToWorld = inv(fWorldToClick);
-    }
-
     void onDrawContent(SkCanvas* canvas) override {
         if (!canvas->getGrContext() && !(fFlags & kCanRunOnCPU)) {
             return;
         }
-        SkM44 clickM = canvas->getLocalToDevice();
 
         canvas->save();
         canvas->translate(DX, DY);
 
-        this->saveCamera(canvas, {0, 0, 400, 400}, 200);
-
-        this->setClickToWorld(canvas, clickM);
+        this->concatCamera(canvas, {0, 0, 400, 400}, 200);
 
         for (bool drawFront : {false, true}) {
             int index = 0;
@@ -290,13 +278,17 @@ public:
                 SkM44 trans = SkM44::Translate(200, 200, 0);   // center of the rotation
                 SkM44 m = fRotateAnimator.rotation() * fRotation * f.asM44(200);
 
-                canvas->concat(trans * m * inv(trans));
+                canvas->concat(trans);
+
+                // "World" space - content is centered at the origin, in device scale (+-200)
+                canvas->markCTM(kLocalToWorld);
+
+                canvas->concat(m * inv(trans));
                 this->drawContent(canvas, f.fColor, index++, drawFront);
             }
         }
 
-        canvas->restore();  // camera
-        canvas->restore();  // center the content in the window
+        canvas->restore();  // camera & center the content in the window
 
         if (fFlags & kShowLightDome){
             fLight.draw(canvas);
@@ -331,11 +323,6 @@ public:
         return nullptr;
     }
     bool onClick(Click* click) override {
-#if 0
-        auto L = fWorldToClick * fLight.fPos;
-        SkPoint c = project(fClickToWorld, {click->fCurr.fX, click->fCurr.fY, L.z/L.w, 1});
-        fLight.update(c.fX, c.fY);
-#endif
         if (click->fMeta.hasS32("type", 0)) {
             fLight.fLoc = fSphere.pinLoc({click->fCurr.fX, click->fCurr.fY});
             return true;
@@ -384,8 +371,8 @@ public:
             in fragmentProcessor color_map;
             in fragmentProcessor normal_map;
 
-            uniform float4x4 localToWorld;
-            uniform float4x4 localToWorldAdjInv;
+            layout (marker=local_to_world)          uniform float4x4 localToWorld;
+            layout (marker=normals(local_to_world)) uniform float4x4 localToWorldAdjInv;
             uniform float3   lightPos;
 
             float3 convert_normal_sample(half4 c) {
@@ -420,35 +407,16 @@ public:
             return;
         }
 
-        auto adj_inv = [](const SkM44& m) {
-            // Normals need to be transformed by the inverse-transpose of the upper-left 3x3 portion
-            // (scale + rotate) of the local to world matrix. (If the local to world only has
-            // uniform scale, we can use its upper-left 3x3 directly, but we don't know if that's
-            // the case here, so go the extra mile.)
-            SkM44 rot_scale(m.rc(0, 0), m.rc(0, 1), m.rc(0, 2), 0,
-                            m.rc(1, 0), m.rc(1, 1), m.rc(1, 2), 0,
-                            m.rc(2, 0), m.rc(2, 1), m.rc(2, 2), 0,
-                                     0,          0,          0, 1);
-            SkM44 inv(SkM44::kUninitialized_Constructor);
-            SkAssertResult(rot_scale.invert(&inv));
-            return inv.transpose();
-        };
+        SkRuntimeShaderBuilder builder(fEffect);
+        builder.input("lightPos") = fLight.computeWorldPos(fSphere);
+        // localToWorld matrices are automatically populated, via layout(marker)
 
-        struct Uniforms {
-            SkM44  fLocalToWorld;
-            SkM44  fLocalToWorldAdjInv;
-            SkV3   fLightPos;
-        } uni;
-        uni.fLocalToWorld = canvas->experimental_getLocalToWorld();
-        uni.fLocalToWorldAdjInv = adj_inv(uni.fLocalToWorld);
-        uni.fLightPos = fLight.computeWorldPos(fSphere);
-
-        sk_sp<SkData> data = SkData::MakeWithCopy(&uni, sizeof(uni));
-        sk_sp<SkShader> children[] = { fImgShader, fBmpShader };
+        builder.child("color_map")  = fImgShader;
+        builder.child("normal_map") = fBmpShader;
 
         SkPaint paint;
         paint.setColor(color);
-        paint.setShader(fEffect->makeShader(data, children, 2, nullptr, true));
+        paint.setShader(builder.makeShader(nullptr, true));
 
         canvas->drawRRect(fRR, paint);
     }
@@ -493,12 +461,14 @@ public:
 
         const char code[] = R"(
             varying float3 vtx_normal;
-            uniform float4x4 localToWorld;
+
+            layout (marker=local_to_world)          uniform float4x4 localToWorld;
+            layout (marker=normals(local_to_world)) uniform float4x4 localToWorldAdjInv;
             uniform float3   lightPos;
 
             void main(float2 p, inout half4 color) {
                 float3 norm = normalize(vtx_normal);
-                float3 plane_norm = normalize(localToWorld * float4(norm, 0)).xyz;
+                float3 plane_norm = normalize(localToWorldAdjInv * float4(norm, 0)).xyz;
 
                 float3 plane_pos = (localToWorld * float4(p, 0, 1)).xyz;
                 float3 light_dir = normalize(lightPos - plane_pos);
@@ -522,18 +492,12 @@ public:
             return;
         }
 
-        struct Uniforms {
-            SkM44  fLocalToWorld;
-            SkV3   fLightPos;
-        } uni;
-        uni.fLocalToWorld = canvas->experimental_getLocalToWorld();
-        uni.fLightPos = fLight.computeWorldPos(fSphere);
-
-        sk_sp<SkData> data = SkData::MakeWithCopy(&uni, sizeof(uni));
+        SkRuntimeShaderBuilder builder(fEffect);
+        builder.input("lightPos") = fLight.computeWorldPos(fSphere);
 
         SkPaint paint;
         paint.setColor(color);
-        paint.setShader(fEffect->makeShader(data, nullptr, 0, nullptr, true));
+        paint.setShader(builder.makeShader(nullptr, true));
 
         canvas->drawVertices(fVertices, paint);
     }

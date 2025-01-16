@@ -579,16 +579,30 @@ describe('Canvas Behavior', () => {
         }
     };
 
+    it('can mark a CTM and retrieve it', () => {
+        const canvas = new CanvasKit.SkCanvas();
+
+        canvas.concat(CanvasKit.SkM44.rotated([0, 1, 0], Math.PI/4));
+        canvas.concat(CanvasKit.SkM44.rotated([1, 0, 1], Math.PI/8));
+        canvas.markCTM('krispykreme');
+
+        const expected = CanvasKit.SkM44.multiply(
+          CanvasKit.SkM44.rotated([0, 1, 0], Math.PI/4),
+          CanvasKit.SkM44.rotated([1, 0, 1], Math.PI/8),
+        );
+
+        expect4x4MatricesToMatch(expected, canvas.findMarkedCTM('krispykreme'));
+    });
+
+    it('returns null for an invalid CTM marker', () => {
+        const canvas = new CanvasKit.SkCanvas();
+        expect(canvas.findMarkedCTM('dunkindonuts')).toBeNull();
+    });
+
     it('can change the 4x4 matrix on the canvas and read it back', () => {
         const canvas = new CanvasKit.SkCanvas();
 
         let matr = canvas.getLocalToDevice();
-        expect(matr).toEqual(CanvasKit.SkM44.identity());
-
-        matr = canvas.getLocalToWorld();
-        expect(matr).toEqual(CanvasKit.SkM44.identity());
-
-        matr = canvas.getLocalToCamera();
         expect(matr).toEqual(CanvasKit.SkM44.identity());
 
         canvas.concat(CanvasKit.SkM44.rotated([0, 1, 0], Math.PI/4));
@@ -600,8 +614,6 @@ describe('Canvas Behavior', () => {
         );
 
         expect4x4MatricesToMatch(expected, canvas.getLocalToDevice());
-        expect4x4MatricesToMatch(expected, canvas.getLocalToWorld());
-        expect4x4MatricesToMatch(expected, canvas.getLocalToCamera());
         // TODO(kjlubick) add test for DOMMatrix
         // TODO(nifong) add more involved test for camera-related math.
     });

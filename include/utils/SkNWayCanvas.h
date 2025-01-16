@@ -26,12 +26,12 @@ protected:
     SkTDArray<SkCanvas*> fList;
 
     void willSave() override;
-    void onSaveCamera(const SkM44& projection, const SkM44& camera) override;
     SaveLayerStrategy getSaveLayerStrategy(const SaveLayerRec&) override;
     bool onDoSaveBehind(const SkRect*) override;
     void willRestore() override;
 
-    void didConcat44(const SkScalar[16]) override;
+    void onMarkCTM(const char*) override;
+    void didConcat44(const SkM44&) override;
     void didConcat(const SkMatrix&) override;
     void didSetMatrix(const SkMatrix&) override;
     void didScale(SkScalar, SkScalar) override;

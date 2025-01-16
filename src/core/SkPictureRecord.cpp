@@ -63,18 +63,14 @@ void SkPictureRecord::recordSave() {
     this->validate(initialOffset, size);
 }
 
-void SkPictureRecord::onSaveCamera(const SkM44& proj, const SkM44& camera) {
-    fRestoreOffsetStack.push_back(-(int32_t)fWriter.bytesWritten());
-
-    size_t size = sizeof(kUInt32Size) + 32 * sizeof(float); // op + proj + camera
-    size_t initialOffset = this->addDraw(SAVE_CAMERA, &size);
-
-    fWriter.write(SkMatrixPriv::M44ColMajor(proj),   16 * sizeof(float));
-    fWriter.write(SkMatrixPriv::M44ColMajor(camera), 16 * sizeof(float));
-
+void SkPictureRecord::onMarkCTM(const char* name) {
+    size_t nameLen = fWriter.WriteStringSize(name);
+    size_t size = sizeof(kUInt32Size) + nameLen; // op + name
+    size_t initialOffset = this->addDraw(MARK_CTM, &size);
+    fWriter.writeString(name);
     this->validate(initialOffset, size);
 
-    this->INHERITED::onSaveCamera(proj, camera);
+    this->INHERITED::onMarkCTM(name);
 }
 
 SkCanvas::SaveLayerStrategy SkPictureRecord::getSaveLayerStrategy(const SaveLayerRec& rec) {
@@ -233,12 +229,12 @@ void SkPictureRecord::recordScale(const SkMatrix& m) {
     this->validate(initialOffset, size);
 }
 
-void SkPictureRecord::didConcat44(const SkScalar m[16]) {
+void SkPictureRecord::didConcat44(const SkM44& m) {
     this->validate(fWriter.bytesWritten(), 0);
     // op + matrix
     size_t size = kUInt32Size + 16 * sizeof(SkScalar);
     size_t initialOffset = this->addDraw(CONCAT44, &size);
-    fWriter.write(m, 16 * sizeof(SkScalar));
+    fWriter.write(SkMatrixPriv::M44ColMajor(m), 16 * sizeof(SkScalar));
     this->validate(initialOffset, size);
 
     this->INHERITED::didConcat44(m);

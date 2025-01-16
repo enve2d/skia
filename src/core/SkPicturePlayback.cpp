@@ -565,6 +565,12 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
                 canvas->drawVertices(vertices, bmode, *paint);
             }
         } break;
+        case MARK_CTM: {
+            SkString name;
+            reader->readString(&name);
+            BREAK_ON_READ_ERROR(reader);
+            canvas->markCTM(name.c_str());
+        } break;
         case RESTORE:
             canvas->restore();
             break;
@@ -584,20 +590,6 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
                 subset = &storage;
             }
             SkCanvasPriv::SaveBehind(canvas, subset);
-        } break;
-        case SAVE_CAMERA: {
-            auto make = [](SkReadBuffer* reader) {
-                const float* cols = (const float*)reader->skip(16 * sizeof(float));
-                SkV4 c0 = {cols[0], cols[1], cols[2], cols[3]}; cols += 4;
-                SkV4 c1 = {cols[0], cols[1], cols[2], cols[3]}; cols += 4;
-                SkV4 c2 = {cols[0], cols[1], cols[2], cols[3]}; cols += 4;
-                SkV4 c3 = {cols[0], cols[1], cols[2], cols[3]};
-                return SkM44::Cols(c0, c1, c2, c3);
-            };
-            SkM44 projection = make(reader);
-            SkM44 camera     = make(reader);
-            BREAK_ON_READ_ERROR(reader);
-            canvas->saveCamera(projection, camera);
         } break;
         case SAVE_LAYER_SAVEFLAGS_DEPRECATED: {
             SkRect storage;
